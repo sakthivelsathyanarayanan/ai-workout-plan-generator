@@ -1,0 +1,17 @@
+[project]
+name = "ai-workout-plan-generator"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "groq>=1.7.0",
+    "streamlit>=1.66.1",
+]
+
+[project.scripts]
+ai-workout-plan-generator = "ai_workout_plan_generator:main"
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14.0"]
+build-backend = "uv_build"
