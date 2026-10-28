@@ -5,8 +5,20 @@ Structured JSON output the LLM must return, and the schema used to enforce it.
 import json
 
 SCHEMA_VERSION = "1.0"
+# Allowed values for day_type and phase. Sensitive: they are used in three places at
+# once: the schema Groq enforces, the v3/v4 prompt text, and app.py (phase != "main" is
+# drawn as a soft row). Renaming one here without updating the others makes Groq reject
+# replies or the UI style them wrongly.
 DAY_TYPES = ["workout", "rest", "active_recovery"]
 PHASES = ["warmup", "main", "cooldown"]
+
+# Schema notes (apply to all three schemas below):
+# - Groq strict mode requires every property to be listed in "required" and
+#   "additionalProperties": False. Optional values are expressed as ["type", "null"]
+#   instead of leaving a field out. Breaking this makes every request fail with a 400.
+# - The UI reads these exact keys (app.render_plan / render_day / exercise_detail), and
+#   plan_from_response checks the "required" lists. Adding, removing or renaming a field
+#   changes what the model must produce, what the prompt shows it, and what the UI reads.
 
 EXERCISE_SCHEMA = {
     "type": "object",
@@ -55,7 +67,13 @@ PLAN_SCHEMA = {
 
 
 def response_format():
-    """The `response_format` argument for a Groq chat completion with strict structured output."""
+    """The `response_format` argument for a Groq chat completion with strict structured output.
+
+    Effect: Groq checks every reply against PLAN_SCHEMA. Matching replies reach us
+    unchanged; non-matching ones are rejected with a 400 "json_validate_failed" error
+    (retried in llm_client). With "strict": False, Groq would pass on replies that don't
+    match and the UI would fall back to raw text more often.
+    """
     return {
         "type": "json_schema",
         "json_schema": {"name": "weekly_workout_plan", "strict": True, "schema": PLAN_SCHEMA},
@@ -74,6 +92,35 @@ def parse_plan(text):
     for day in plan["days"]:
         if not isinstance(day, dict) or not isinstance(day.get("exercises"), list):
             raise ValueError("Each day in the LLM response needs an 'exercises' list.")
+    return plan
+
+
+def _has_keys(obj, schema):
+    return isinstance(obj, dict) and all(key in obj for key in schema["required"])
+
+
+def plan_from_response(text: str) -> dict | None:
+    """The plan dict if the LLM text is JSON matching the plan schema the UI reads, else None.
+
+    Purpose: the gate between the LLM and the UI. The plan cards index keys directly
+    (plan["days"], ex["phase"], ...), so rendering a reply with a missing key would crash
+    the page. When this returns None, app.py shows the raw text instead.
+    Checks only that required keys exist, not their types or values; Groq's strict
+    response_format covers those. Kept as a second line of defence, e.g. when
+    response_format is turned off to experiment with prompts.
+    """
+    try:
+        plan = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+    if not _has_keys(plan, PLAN_SCHEMA) or not isinstance(plan["days"], list) or not plan["days"]:
+        return None
+    for day in plan["days"]:
+        if not _has_keys(day, DAY_SCHEMA) or not isinstance(day["exercises"], list):
+            return None
+        if not all(_has_keys(ex, EXERCISE_SCHEMA) for ex in day["exercises"]):
+            return None
     return plan
 
 
