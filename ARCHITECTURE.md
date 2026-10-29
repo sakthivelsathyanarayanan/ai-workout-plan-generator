@@ -131,7 +131,8 @@ injuries or `null`), `availability` (days per week, rest days, session minutes),
 (available list, `bodyweight_only`).
 
 **Output (returned by the model):** `schema_version`, `plan_title`, `summary`, `safety_notes[]`,
-and `days[]` (7 items: `day_number`, `day_type` = workout / rest / active_recovery, `title`, `focus`,
+`has_physical_limitation` (the model's judgement of the injuries text; the app shows its fixed
+disclaimer only when true), and `days[]` (7 items: `day_number`, `day_type` = workout / rest / active_recovery, `title`, `focus`,
 `duration_minutes`, `exercises[]` with `name`, `phase` = warmup / main / cooldown, `sets`, `reps`,
 `rest_seconds`, `notes`).
 
@@ -143,7 +144,7 @@ Kept side by side in `SYSTEM_PROMPTS`; `ACTIVE_PROMPT` picks the one in use.
 flowchart LR
     v1["v1<br/>one-line baseline"] --> v2["v2<br/>+ trainer role<br/>+ meaning of input fields"]
     v2 --> v3["v3<br/>+ plan rules<br/>+ experience level<br/>+ JSON output + schema"]
-    v3 --> v4["v4 (active)<br/>+ injury safety<br/>+ treat user text as data<br/>+ worked example"]
+    v3 --> v4["v4 (active)<br/>+ equipment definitions<br/>+ session length<br/>+ injury safety + disclaimer flag<br/>+ treat user text as data"]
 ```
 
 ## 6. Key settings

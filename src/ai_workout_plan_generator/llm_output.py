@@ -3,6 +3,7 @@ Structured JSON output the LLM must return, and the schema used to enforce it.
 """
 
 import json
+from typing import Any
 
 SCHEMA_VERSION = "1.0"
 # Allowed values for day_type and phase. Sensitive: they are used in three places at
@@ -55,18 +56,29 @@ PLAN_SCHEMA = {
         "plan_title": {"type": "string"},
         "summary": {"type": "string"},
         "safety_notes": {"type": "array", "items": {"type": "string"}},
+        # The model's judgement of the free-text injuries field. Only the model can tell a
+        # real limitation ("bad knees") from unrelated text ("I love samosa"); app.py shows
+        # its fixed injury disclaimer only when this is true.
+        "has_physical_limitation": {
+            "type": "boolean",
+            "description": "True only if injuries_or_limitations describes a real physical "
+                           "injury, pain, condition or movement restriction.",
+        },
         "days": {
             "type": "array",
             "items": DAY_SCHEMA,
             "description": "Exactly 7 days, Day 1 to Day 7, including rest days.",
         },
     },
-    "required": ["schema_version", "plan_title", "summary", "safety_notes", "days"],
+    "required": [
+        "schema_version", "plan_title", "summary", "safety_notes",
+        "has_physical_limitation", "days",
+    ],
     "additionalProperties": False,
 }
 
 
-def response_format():
+def response_format() -> dict[str, Any]:
     """The `response_format` argument for a Groq chat completion with strict structured output.
 
     Effect: Groq checks every reply against PLAN_SCHEMA. Matching replies reach us
@@ -80,26 +92,11 @@ def response_format():
     }
 
 
-def parse_plan(text):
-    """Parse the LLM response text into a plan dict. Raises ValueError if it is malformed."""
-    try:
-        plan = json.loads(text)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"LLM response is not valid JSON: {e}") from e
-
-    if not isinstance(plan, dict) or not isinstance(plan.get("days"), list) or not plan["days"]:
-        raise ValueError("LLM response has no 'days' list.")
-    for day in plan["days"]:
-        if not isinstance(day, dict) or not isinstance(day.get("exercises"), list):
-            raise ValueError("Each day in the LLM response needs an 'exercises' list.")
-    return plan
-
-
-def _has_keys(obj, schema):
+def _has_keys(obj: object, schema: dict[str, Any]) -> bool:
     return isinstance(obj, dict) and all(key in obj for key in schema["required"])
 
 
-def plan_from_response(text: str) -> dict | None:
+def plan_from_response(text: str | None) -> dict[str, Any] | None:
     """The plan dict if the LLM text is JSON matching the plan schema the UI reads, else None.
 
     Purpose: the gate between the LLM and the UI. The plan cards index keys directly
@@ -127,14 +124,21 @@ def plan_from_response(text: str) -> dict | None:
 # --------------------------------------------------------------------------
 # Sample output, used to build the UI before the LLM call is wired
 # --------------------------------------------------------------------------
-def _ex(name, phase, sets, reps, rest_seconds=None, notes=None):
+def _ex(
+    name: str,
+    phase: str,
+    sets: int | None,
+    reps: str,
+    rest_seconds: int | None = None,
+    notes: str | None = None,
+) -> dict[str, Any]:
     return {
         "name": name, "phase": phase, "sets": sets, "reps": reps,
         "rest_seconds": rest_seconds, "notes": notes,
     }
 
 
-def _rest_day(day_number):
+def _rest_day(day_number: int) -> dict[str, Any]:
     return {
         "day_number": day_number, "day_type": "rest", "title": "Rest",
         "focus": "Recovery", "duration_minutes": 0, "exercises": [],
@@ -146,6 +150,7 @@ SAMPLE_PLAN = {
     "plan_title": "4-Day Upper/Lower Muscle Builder",
     "summary": "Two upper and two lower sessions with dumbbells. Add a rep each week, then add weight once you hit the top of the range.",
     "safety_notes": ["Knee-friendly: box squats and short-range lunges instead of deep squats."],
+    "has_physical_limitation": True,
     "days": [
         {
             "day_number": 1, "day_type": "workout", "title": "Upper Body Push",

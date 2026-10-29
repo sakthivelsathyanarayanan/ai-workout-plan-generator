@@ -2,6 +2,42 @@
 
 All notable changes to this project, one entry per commit, newest first.
 
+## 2026-10-29 — Regenerate, download, injury disclaimer, prompt and robustness fixes
+
+### Added
+- "Regenerate" button: new plan for the inputs on screen; shares `request_plan()` with
+  "Generate plan".
+- "Download full plan (7 days, .md)" button above the day tabs (`plan_to_markdown()`).
+- Injury disclaimer: new `has_physical_limitation` field in the output schema, set by the
+  model; the app shows a fixed disclaimer (and adds it to the download) only when it's true,
+  so unrelated text like "I love samosa" no longer triggers it.
+- Input check inside `generate_workout_plan()`: goal, level, days 1–7, time > 0, equipment.
+- Empty LLM reply (None or whitespace) now raises a friendly `LLMError`.
+- Type hints on every function, with `Inputs` / `Plan` / `Day` / `Exercise` aliases in `app.py`.
+- Full README: features, setup, run, how it works, prompt design, error handling, structure.
+
+### Changed
+- System prompt v4 (still the active version):
+  - Written out in full instead of being built from v3, so each rule is stated once
+    (equipment, session time, safety notes and non-limitation text had been repeated);
+    the text before the schema is about 16% shorter.
+  - "Equipment" section defining each option; plans for the most capable one, so a full gym
+    gets barbell, cable and machine work.
+  - "Session length" rule: workouts fill 90–100% of the available time (sessions stopped
+    at ~120 min even when 3 hours were given).
+  - Disclaimer handled once, by the app: the prompt sets `has_physical_limitation` and tells
+    the model not to add its own disclaimer to `safety_notes` (it appeared twice).
+  - Worked example removed: the model copied its exercises into unrelated plans, and it
+    cost prompt tokens. Shape and detail come from the strict schema and plan rules.
+- "LLM output (JSON)" expander also handles a `None` reply.
+- `app.py` run instructions use `uv sync` / `uv run streamlit run app.py`; `pyproject.toml`
+  description filled in.
+- `ARCHITECTURE.md` lists the new `has_physical_limitation` output field.
+
+### Removed
+- Unused `parse_plan()` (replaced by `plan_from_response()`).
+- Template placeholder `main()` and its `[project.scripts]` entry.
+
 ## 2026-10-28 — Groq LLM integration, prompt versions v1–v4, error handling
 
 ### Added

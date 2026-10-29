@@ -2,12 +2,15 @@
 Fitness Plan Generator — Streamlit app
 
 Run:
-    pip install streamlit
-    streamlit run app.py
+    uv sync
+    uv run streamlit run app.py
+
+Needs GROQ_API_KEY in a .env file (copy .env.sample to .env and add your key).
 """
 
 import json
 from html import escape
+from typing import Any
 
 import streamlit as st
 
@@ -106,7 +109,8 @@ html, body, .stApp, [data-testid="stAppViewContainer"],
 }
 
 [data-testid="stFormSubmitButton"] button,
-[data-testid="stButton"] button {
+[data-testid="stButton"] button,
+[data-testid="stDownloadButton"] button {
     width: 100%;
     background: linear-gradient(135deg, var(--teal), var(--teal-dark)) !important;
     color: #06201C !important;
@@ -118,7 +122,8 @@ html, body, .stApp, [data-testid="stAppViewContainer"],
     transition: transform .12s ease, box-shadow .12s ease;
 }
 [data-testid="stFormSubmitButton"] button:hover,
-[data-testid="stButton"] button:hover {
+[data-testid="stButton"] button:hover,
+[data-testid="stDownloadButton"] button:hover {
     transform: translateY(-1px);
     box-shadow: 0 8px 18px rgba(45, 212, 191, 0.35);
     color: #06201C !important;
@@ -170,11 +175,29 @@ GOALS = ["Build muscle", "Lose fat", "General fitness", "Improve endurance"]
 LEVELS = ["Beginner", "Intermediate", "Advanced"]
 EQUIPMENT = ["No equipment", "Home dumbbells", "Full gym"]
 
+# Shown under the plan (and in the download) when the model reports a real physical
+# limitation (plan["has_physical_limitation"]). The app can't judge free text itself, e.g.
+# "bad knees" vs "I love samosa", so the model decides and the app shows fixed wording.
+# This is the only disclaimer: the prompt tells the model not to repeat one in
+# safety_notes, so the user doesn't see it twice.
+INJURY_DISCLAIMER = (
+    "This plan is general fitness guidance, not medical advice. Because you mentioned an "
+    "injury or limitation, check with a doctor or physiotherapist before starting, and stop "
+    "any exercise that causes pain."
+)
+
+# Type aliases for readability. Inputs is the form dict built in handle_submit;
+# Plan, Day and Exercise follow PLAN_SCHEMA / DAY_SCHEMA / EXERCISE_SCHEMA in llm_output.
+Inputs = dict[str, Any]
+Plan = dict[str, Any]
+Day = dict[str, Any]
+Exercise = dict[str, Any]
+
 
 # --------------------------------------------------------------------------
 # UI pieces
 # --------------------------------------------------------------------------
-def render_form():
+def render_form() -> bool:
     """The input form. Returns True when the button is pressed."""
     with st.form("plan_form"):
         st.selectbox("Fitness goal", GOALS, key="goal")
@@ -200,10 +223,12 @@ def render_form():
         return st.form_submit_button("Generate plan")
 
 
-def render_plan(inputs):
-    top_l, top_r = st.columns([4, 1])
+def render_plan(inputs: Inputs) -> None:
+    top_l, top_mid, top_r = st.columns([3, 1.3, 1.3])
     with top_l:
         st.markdown("### Your weekly plan")
+    with top_mid:
+        regenerate = st.button("Regenerate", use_container_width=True)
     with top_r:
         if st.button("Start over", use_container_width=True):
             # Clear both together: inputs controls which layout is shown, and a leftover
@@ -211,6 +236,13 @@ def render_plan(inputs):
             st.session_state.inputs = None
             st.session_state.raw_response = None
             st.rerun()
+
+    # Regenerate asks for a new plan with the inputs of the plan on screen, not the form's
+    # current values (the user may have edited the form without submitting it). With
+    # TEMPERATURE 0.3 the new plan varies, but stays close to the previous one.
+    # Handled outside the columns so an error message uses the full width.
+    if regenerate:
+        request_plan(inputs)
 
     # Gate between the LLM and the UI: the cards below index keys like plan["days"]
     # directly, so only a reply that passes the schema check is rendered as cards.
@@ -247,6 +279,20 @@ def render_plan(inputs):
         """,
         unsafe_allow_html=True,
     )
+    if plan["has_physical_limitation"]:
+        st.warning(INJURY_DISCLAIMER, icon="⚠️")
+
+    # One file with the whole week (all days), placed above the day tabs so it reads as
+    # belonging to the plan, not to the day that is open. It is built from the plan
+    # already in session state, so it never calls the API. Only offered for a valid plan,
+    # because plan_to_markdown reads the schema keys directly.
+    st.download_button(
+        f'Download full plan ({len(plan["days"])} days, .md)',
+        data=plan_to_markdown(plan, inputs),
+        file_name="workout-plan.md",
+        mime="text/markdown",
+        use_container_width=True,
+    )
 
     tabs = st.tabs([f'Day {day["day_number"]}' for day in plan["days"]])
     for tab, day in zip(tabs, plan["days"]):
@@ -254,7 +300,44 @@ def render_plan(inputs):
             render_day(day)
 
 
-def render_llm_io(inputs, raw_response):
+def plan_to_markdown(plan: Plan, inputs: Inputs) -> str:
+    """The plan as a Markdown document: summary, safety notes and one table per day."""
+
+    def cell(text: object) -> str:
+        # "|" would split a Markdown table cell and newlines would break the row.
+        return str(text or "").replace("|", "/").replace("\n", " ")
+
+    lines = [
+        f'# {plan["plan_title"]}',
+        "",
+        plan["summary"],
+        "",
+        f'**Goal:** {inputs["goal"]} · **Level:** {inputs["level"]} · '
+        f'**Days:** {inputs["days"]} / week · **Time:** {inputs["hours"]:g} h / day',
+    ]
+    if plan["safety_notes"]:
+        lines += ["", "## Safety notes", ""]
+        lines += [f"- {note}" for note in plan["safety_notes"]]
+    if plan["has_physical_limitation"]:
+        lines += ["", f"> **Disclaimer:** {INJURY_DISCLAIMER}"]
+
+    for day in plan["days"]:
+        meta = day["focus"]
+        if day["duration_minutes"]:
+            meta += f' · {day["duration_minutes"]} min'
+        lines += ["", f'## Day {day["day_number"]} · {day["title"]}', "", f"_{meta}_", ""]
+        if not day["exercises"]:
+            lines.append("Rest day.")
+            continue
+        lines += ["| Phase | Exercise | Sets × reps · rest | Notes |", "|---|---|---|---|"]
+        lines += [
+            f'| {ex["phase"]} | {cell(ex["name"])} | {cell(exercise_detail(ex))} | {cell(ex["notes"])} |'
+            for ex in day["exercises"]
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def render_llm_io(inputs: Inputs, raw_response: str | None) -> None:
     """The JSON sent to the LLM and the raw reply, for inspecting prompt changes.
 
     A debugging aid: it shows exactly what the model received and returned, including
@@ -267,11 +350,12 @@ def render_llm_io(inputs, raw_response):
         # prompts) as plain text, so the raw reply is always visible.
         try:
             st.json(json.loads(raw_response))
-        except json.JSONDecodeError:
+        # TypeError covers a None reply, so this expander can never crash the page.
+        except (json.JSONDecodeError, TypeError):
             st.code(raw_response, language=None)
 
 
-def exercise_detail(ex):
+def exercise_detail(ex: Exercise) -> str:
     """e.g. "4 × 8-12 · 90s rest", or just "30 sec" for timed items."""
     detail = f'{ex["sets"]} × {ex["reps"]}' if ex["sets"] else ex["reps"]
     if ex["rest_seconds"]:
@@ -279,7 +363,7 @@ def exercise_detail(ex):
     return detail
 
 
-def render_day(day):
+def render_day(day: Day) -> None:
     # Every LLM-provided string is passed through escape() before it goes into the HTML
     # (rendered with unsafe_allow_html=True). Keep it that way when adding fields.
     meta = escape(day["focus"])
@@ -303,7 +387,7 @@ def render_day(day):
     st.markdown("".join(rows), unsafe_allow_html=True)
 
 
-def header():
+def header() -> None:
     st.markdown('<p class="app-title">Fitness Plan Generator</p>', unsafe_allow_html=True)
     st.markdown(
         '<p class="app-sub">Answer a few questions and get a weekly plan that fits your schedule.</p>',
@@ -311,7 +395,7 @@ def header():
     )
 
 
-def handle_submit():
+def handle_submit() -> None:
     """Validate the form, call the LLM once and store the result in session state.
 
     Order matters:
@@ -334,12 +418,22 @@ def handle_submit():
         "equipment": st.session_state.equipment,
         "injuries": st.session_state.injuries,
     }
+    request_plan(inputs)
+
+
+def request_plan(inputs: Inputs) -> None:
+    """Call the LLM for these inputs; on success store the plan and rerun, else show an error.
+
+    Shared by "Generate plan" and "Regenerate", so both get the same spinner, error
+    handling and session-state update.
+    """
     try:
         with st.spinner("Generating plan..."):
             raw_response = generate_workout_plan(**inputs)
     except LLMError as e:
         # generate_workout_plan only ever raises LLMError, whose messages are written to
-        # be shown to users (no API key, no raw Groq bodies).
+        # be shown to users (no API key, no raw Groq bodies). The previous plan, if any,
+        # stays on screen.
         st.error(str(e))
         return
     st.session_state.inputs = inputs

@@ -3,12 +3,13 @@ Standard JSON input context sent to the LLM, built from the form submission.
 """
 
 import json
+from typing import Any
 
 SCHEMA_VERSION = "1.0"
 NO_EQUIPMENT = "No equipment"
 
 
-def build_llm_input(inputs):
+def build_llm_input(inputs: dict[str, Any]) -> dict[str, Any]:
     """Map the form inputs dict (from app.handle_submit) to the LLM input template.
 
     Sensitive: this JSON is exactly what the model sees about the user, and the system
@@ -49,6 +50,6 @@ def build_llm_input(inputs):
     }
 
 
-def to_llm_json(inputs):
+def to_llm_json(inputs: dict[str, Any]) -> str:
     """The LLM input as a pretty-printed JSON string, ready for the user message."""
     return json.dumps(build_llm_input(inputs), indent=2)
