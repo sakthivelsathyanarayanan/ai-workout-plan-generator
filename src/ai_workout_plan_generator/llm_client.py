@@ -115,7 +115,7 @@ before or after it. It must match this JSON Schema exactly, with schema_version 
 "{SCHEMA_VERSION}":
 {json.dumps(PLAN_SCHEMA)}"""
 
-# v4: v3 + equipment definitions, + session length, + injury safety, + guarding against misuse.
+# v4: v3 + equipment definitions, + injury safety, + guarding against misuse.
 # No worked example: an earlier version included one workout day as a style example, but
 # the model copied its exercises into unrelated plans (and it cost prompt tokens). The
 # strict response_format and the plan rules already define the shape and detail.
@@ -129,10 +129,10 @@ before or after it. It must match this JSON Schema exactly, with schema_version 
 #   a label: the model played safe and wrote near dumbbell-only plans for gym users.
 #   The "most capable option" rule handles the form default, where "Home dumbbells" stays
 #   selected next to "Full gym". Changing these lists changes which exercises can appear.
-# - "Session length": v3 only says sessions must not exceed the available time, so the model
-#   stopped at what it considers a normal session (~100-120 min even when 3 hours were
-#   given). This asks it to fill 90-100% of the time. Effect: longer sessions mean longer
-#   JSON replies, so more tokens, a higher chance of cut-offs, retries and the 413 limit.
+# No session-length rule on purpose: v3 only says a workout must not exceed the available
+# time, so long slots (e.g. 3 hours) may come back shorter (~100-120 min). A rule to fill
+# 90-100% of the time was tried and removed: the model spent ~7,700 reasoning tokens working
+# out the minutes and the 3-hour reply was cut off at the token limit.
 # Inserted before "Output format:" so the format instructions stay last.
 SYSTEM_PROMPTS["v4"] = SYSTEM_PROMPTS["v3"].replace("Output format:", """Equipment:
 - "No equipment": bodyweight only (a wall, chair, floor or sturdy table is fine).
@@ -144,13 +144,6 @@ press, leg curl/extension, Smith machine).
 - When several options are listed, plan for the most capable one. With a full gym, \
 build each workout around barbell and machine/cable work, with dumbbells as accessories. \
 Don't give a dumbbell-only plan to someone with a full gym.
-
-Session length:
-- Use the time the user has. Each workout day's duration_minutes must be between 90% \
-and 100% of availability.session_duration_minutes (e.g. 160-180 for 180 minutes).
-- Fill longer sessions with useful work that suits the goal and level: more exercises or \
-sets, a fuller warm-up, accessory work, or a conditioning or mobility block. Make the \
-exercises, sets and rest times add up to roughly the stated duration_minutes.
 
 Safety and limitations:
 - If injuries_or_limitations is set, leave out exercises that load or aggravate those \

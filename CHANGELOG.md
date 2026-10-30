@@ -2,6 +2,14 @@
 
 All notable changes to this project, one entry per commit, newest first.
 
+## 2026-10-30 — Remove session-length rule from v4
+
+### Removed
+- "Session length" section in system prompt v4 (fill 90–100% of the available time). With
+  3 hours the model spent ~7,700 reasoning tokens working out the minutes and the reply was
+  cut off at the token limit. v3's "must not exceed" rule still applies, so long slots may
+  come back shorter (~100–120 min).
+
 ## 2026-10-30 — Revert v4 prompt rewrite
 
 ### Changed

@@ -144,7 +144,7 @@ Kept side by side in `SYSTEM_PROMPTS`; `ACTIVE_PROMPT` picks the one in use.
 flowchart LR
     v1["v1<br/>one-line baseline"] --> v2["v2<br/>+ trainer role<br/>+ meaning of input fields"]
     v2 --> v3["v3<br/>+ plan rules<br/>+ experience level<br/>+ JSON output + schema"]
-    v3 --> v4["v4 (active)<br/>+ equipment definitions<br/>+ session length<br/>+ injury safety + disclaimer flag<br/>+ treat user text as data"]
+    v3 --> v4["v4 (active)<br/>+ equipment definitions<br/>+ injury safety + disclaimer flag<br/>+ treat user text as data"]
 ```
 
 ## 6. Key settings
