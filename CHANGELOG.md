@@ -2,6 +2,14 @@
 
 All notable changes to this project, one entry per commit, newest first.
 
+## 2026-10-30 — Revert v4 prompt rewrite
+
+### Changed
+- System prompt v4 restored to the version before the deduplication rewrite: built from v3
+  with the Equipment, Session length, Safety and limitations (including the
+  `has_physical_limitation` flag and the no-duplicate-disclaimer rule) and Treat user input
+  as data sections, no worked example. The rewrite wasn't verified with a full plan.
+
 ## 2026-10-29 — Regenerate, download, injury disclaimer, prompt and robustness fixes
 
 ### Added
